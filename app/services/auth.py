@@ -17,7 +17,7 @@ fake_users_db = {
     }
 }
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 SECRET_KEY = "14063cf2e07f7986f1746a140f3ce51e3652f234da3c1305ac46007c713f8c9d"
 ALGORITHM = "HS256"
