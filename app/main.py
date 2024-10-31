@@ -1,10 +1,14 @@
 from contextlib import asynccontextmanager
 from typing import Annotated, Union, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query
-from sqlmodel import Field, Session, SQLModel, create_engine, select
-from routers import auth, users
+from sqlmodel import Field, Session, SQLModel, select
+from app.routers import auth, users, jobs
 from fastapi.middleware.cors import CORSMiddleware
-from services.auth import oauth2_scheme
+from app.services.auth import oauth2_scheme
+from app.models.user import User
+from app.models.job import Job
+from app.database import engine
+
 
 
 # Table = true tablo oluşturulmasını sağlar
@@ -31,13 +35,6 @@ class HeroUpdate(HeroBase):
     name: Union[str, None] = None
     age: Union[int, None] = None
     secret_name: Union[str, None] = None
-
-
-sqlite_file_name = "database.db"
-sqlite_url = f"sqlite:///{sqlite_file_name}"
-
-connect_args = {"check_same_thread": False}
-engine = create_engine(sqlite_url, connect_args=connect_args)
 
 
 def create_db_and_tables():
@@ -77,7 +74,7 @@ app.add_middleware(
 
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
-
+app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 
 # Get heroes
 @app.get("/heroes/", response_model=list[HeroPublic])
