@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 import os
 from typing import Annotated, Union, Optional
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, requests
@@ -11,9 +12,13 @@ from app.models.user import User
 from app.models.job import Job
 from app.database import engine
 from roboflow import Roboflow
-# import the inference-sdk
-from inference_sdk import InferenceHTTPClient, InferenceConfiguration
 
+# Load environment variables from the .env file
+load_dotenv()
+# Access environment variables
+API_KEY = os.getenv("API_KEY")
+MODEL_ENDPOINT = os.getenv("MODEL_ENDPOINT")
+VERSION = os.getenv("VERSION")
 
 # Initialize Roboflow
 rf = Roboflow(api_key=API_KEY)
