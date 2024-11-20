@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
+import os
 from typing import Annotated, Union, Optional
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, requests
+from fastapi.responses import JSONResponse
 from sqlmodel import Field, Session, SQLModel, select
 from app.routers import auth, users, jobs
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +10,15 @@ from app.services.auth import oauth2_scheme
 from app.models.user import User
 from app.models.job import Job
 from app.database import engine
+from roboflow import Roboflow
+# import the inference-sdk
+from inference_sdk import InferenceHTTPClient, InferenceConfiguration
+
+
+# Initialize Roboflow
+rf = Roboflow(api_key=API_KEY)
+project = rf.workspace().project(MODEL_ENDPOINT)
+model = project.version(VERSION).model
 
 
 
@@ -75,6 +86,34 @@ app.add_middleware(
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
+
+@app.post("/predict")
+async def predict(image: UploadFile = File(...)):
+    """
+    Accepts an image file, sends it to Roboflow for prediction, and returns the prediction JSON.
+    """
+    try:
+        # Validate the file type
+        if not image.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Uploaded file is not an image.")
+
+        # Save the uploaded image temporarily
+        temp_image_path = f"temp_{image.filename}"
+        with open(temp_image_path, "wb") as buffer:
+            buffer.write(await image.read())
+
+        # Perform inference using Roboflow SDK
+        predictions = model.predict(temp_image_path, confidence=7, overlap=50).json()
+
+        # Clean up temporary image
+        os.remove(temp_image_path)
+
+        # Return the prediction JSON
+        return JSONResponse(content=predictions)
+
+    except Exception as e:
+        # Handle unexpected errors
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Get heroes
 @app.get("/heroes/", response_model=list[HeroPublic])
