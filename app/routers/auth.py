@@ -21,7 +21,7 @@ from app.services.auth import ACCESS_TOKEN_EXPIRE_MINUTES, Token, UserCreate, Us
 
 class LoginRequest(BaseModel):
     username: str
-    password: int
+    password: str
 
 
 router = APIRouter()
@@ -29,11 +29,11 @@ router = APIRouter()
 
 @router.post("/token")
 async def login_for_access_token(
-    # form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    login_request: LoginRequest,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    # login_request: LoginRequest,
     session: Session = Depends(get_session),
 ) -> Token:
-    user = authenticate_user(session, login_request.username, str(login_request.password))
+    user = authenticate_user(session, form_data.username, str(form_data.password))
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

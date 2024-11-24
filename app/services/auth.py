@@ -47,7 +47,7 @@ class User(BaseModel):
 
 
 class UserCreate(User):
-    password: int
+    password: str
 
 
 class UserInDB(User):

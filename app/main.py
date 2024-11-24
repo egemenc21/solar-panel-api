@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.services.auth import oauth2_scheme
 from app.models.user import User
 from app.models.job import Job
-from app.database import engine
+from app.database import engine, create_engine
 from roboflow import Roboflow
 
 # Load environment variables from the .env file
