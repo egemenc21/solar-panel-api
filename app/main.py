@@ -12,6 +12,8 @@ from app.models.user import User
 from app.models.job import Job
 from app.database import engine, create_engine
 from roboflow import Roboflow
+from PIL import Image, ImageDraw, ImageFont
+from fastapi.staticfiles import StaticFiles
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -91,11 +93,12 @@ app.add_middleware(
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
+app.mount("/classified_images", StaticFiles(directory="classified_images"), name="classified_images")
 
 @app.post("/predict")
-async def predict(image: UploadFile = File(...)):
+async def predict(image: UploadFile = File(...), user_id: int = 0):
     """
-    Accepts an image file, sends it to Roboflow for prediction, and returns the prediction JSON.
+    Accepts an image file, sends it to Roboflow for prediction, annotates the image, and saves it.
     """
     try:
         # Validate the file type
@@ -110,15 +113,61 @@ async def predict(image: UploadFile = File(...)):
         # Perform inference using Roboflow SDK
         predictions = model.predict(temp_image_path, confidence=7, overlap=50).json()
 
+        # Open the image using PIL for annotation
+        pil_image = Image.open(temp_image_path)
+        draw = ImageDraw.Draw(pil_image)
+
+        # Define font for labels
+        # Use default font
+        font = ImageFont.load_default() 
+        font.size = 20
+
+        # Annotate the image with predictions
+        for prediction in predictions.get("predictions", []):
+            x, y = prediction["x"], prediction["y"]
+            width, height = prediction["width"], prediction["height"]
+            label = prediction["class"]
+
+            # Draw a rectangle around the object with smaller line width
+            top_left = (x - width // 2, y - height // 2)
+            bottom_right = (x + width // 2, y + height // 2)
+            draw.rectangle([top_left, bottom_right], outline="red", width=1)
+
+            padding = 15  # Adjust padding value as needed
+            # Adjust text position and size
+            text_position = (top_left[0], top_left[1] - padding)  # Place text slightly above the box
+            draw.text(text_position, label, fill="red", font=font)
+
+        # Save the annotated image
+        filename = f"classified_{image.filename}"
+        classified_image_path = save_classified_image(pil_image, user_id, filename)
+
         # Clean up temporary image
         os.remove(temp_image_path)
 
-        # Return the prediction JSON
-        return JSONResponse(content=predictions)
+        # Return the prediction JSON along with the path to the classified image
+        return JSONResponse(content={
+            "predictions": predictions,
+            "classified_image_path": classified_image_path
+        })
 
     except Exception as e:
         # Handle unexpected errors
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def save_classified_image(image: Image, user_id: int, filename: str) -> str:
+    """
+    Saves the classified image to a user-specific directory.
+    """
+    base_dir = "classified_images"
+    user_dir = os.path.join(base_dir, f"user_{user_id}")
+    os.makedirs(user_dir, exist_ok=True)
+
+    image_path = os.path.join(user_dir, filename)
+    image.save(image_path, "JPEG", quality=85)  # Compress image
+    return image_path
+
 
 # Get heroes
 @app.get("/heroes/", response_model=list[HeroPublic])
