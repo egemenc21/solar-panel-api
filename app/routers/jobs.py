@@ -3,33 +3,33 @@ from sqlmodel import Session, select
 from typing import Annotated, List
 from app.database import get_session
 from app.models.models import Job
-
+from app.services.auth import User, get_current_active_user
 router = APIRouter()
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
 
 @router.post("/", response_model=Job, status_code=status.HTTP_201_CREATED)
-def create_job(session: SessionDep, job: Job):
+def create_job(session: SessionDep, job: Job, current_user: Annotated[User, Depends(get_current_active_user)]):
     session.add(job)
     session.commit()
     session.refresh(job)
     return job
 
 @router.get("/", response_model=List[Job])
-def read_jobs(session:SessionDep):
+def read_jobs(session:SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
     jobs = session.exec(select(Job)).all()
     return jobs
 
 @router.get("/{job_id}", response_model=Job)
-def read_job(session: SessionDep, job_id: int):
+def read_job(session: SessionDep, job_id: int, current_user: Annotated[User, Depends(get_current_active_user)]):
     job = session.get(Job, job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     return job
 
-@router.put("/{job_id}", response_model=Job)
-def update_job(session:SessionDep, job_id: int, job: Job):
+@router.put("/{job_id}", response_model=Job,)
+def update_job(session:SessionDep, job_id: int, job: Job, current_user: Annotated[User, Depends(get_current_active_user)]):
     db_job = session.get(Job, job_id)
     if not db_job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
@@ -43,7 +43,7 @@ def update_job(session:SessionDep, job_id: int, job: Job):
     return db_job
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_job( job_id: int, session: Session = Depends(get_session)):
+def delete_job( job_id: int,current_user: Annotated[User, Depends(get_current_active_user)], session: Session = Depends(get_session), ):
     job = session.get(Job, job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")

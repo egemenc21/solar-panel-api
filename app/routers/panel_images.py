@@ -3,7 +3,7 @@ from sqlmodel import Session, select
 from typing import Annotated, List, Optional
 from app.database import get_session
 from app.models.models import SolarField, PanelImage
-
+from app.services.auth import User, get_current_active_user
 router = APIRouter()
 
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -12,7 +12,7 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 
 @router.post("/", response_model=PanelImage, status_code=status.HTTP_201_CREATED)
-def create_panel_image(session: SessionDep, image: PanelImage):
+def create_panel_image(session: SessionDep, image: PanelImage, current_user: Annotated[User, Depends(get_current_active_user)]):
     session.add(image)
     session.commit()
     session.refresh(image)
@@ -20,13 +20,13 @@ def create_panel_image(session: SessionDep, image: PanelImage):
 
 
 @router.get("/", response_model=List[PanelImage])
-def read_panel_images(session: SessionDep):
+def read_panel_images(session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
     images = session.exec(select(PanelImage)).all()
     return images
 
 
 @router.get("/{image_id}", response_model=PanelImage)
-def read_panel_image(session: SessionDep, image_id: int):
+def read_panel_image(session: SessionDep, image_id: int, current_user: Annotated[User, Depends(get_current_active_user)]):
     image = session.get(PanelImage, image_id)
     if not image:
         raise HTTPException(
@@ -34,8 +34,8 @@ def read_panel_image(session: SessionDep, image_id: int):
     return image
 
 
-@router.put("/{image_id}", response_model=PanelImage)
-def update_panel_image(session: SessionDep, image_id: int, image: PanelImage):
+@router.put("/{image_id}", response_model=PanelImage )
+def update_panel_image(session: SessionDep, image_id: int, image: PanelImage, current_user: Annotated[User, Depends(get_current_active_user)]):
     db_image = session.get(PanelImage, image_id)
     if not db_image:
         raise HTTPException(
@@ -50,7 +50,7 @@ def update_panel_image(session: SessionDep, image_id: int, image: PanelImage):
 
 
 @router.delete("/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_panel_image(session: SessionDep, image_id: int):
+def delete_panel_image(session: SessionDep, image_id: int, current_user: Annotated[User, Depends(get_current_active_user)]):
     image = session.get(PanelImage, image_id)
     if not image:
         raise HTTPException(

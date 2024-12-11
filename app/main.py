@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlmodel import Field, Session, SQLModel, select
 from app.routers import auth, users, jobs, fields, panel_images
 from fastapi.middleware.cors import CORSMiddleware
-from app.services.auth import oauth2_scheme
+from app.services.auth import oauth2_scheme, get_current_active_user
 # from app.models.user import User
 # from app.models.job import Job
 from app.models.models import User, Job, SolarField, PanelImage
@@ -99,7 +99,7 @@ app.include_router(panel_images.router, prefix="/panel_images", tags=["panel_ima
 app.mount("/classified_images", StaticFiles(directory="classified_images"), name="classified_images")
 
 @app.post("/predict")
-async def predict(image: UploadFile = File(...), user_id: int = 0):
+async def predict(current_user: Annotated[User, Depends(get_current_active_user)], image: UploadFile = File(...), user_id: int = 0):
     """
     Accepts an image file, sends it to Roboflow for prediction, annotates the image, and saves it.
     """
