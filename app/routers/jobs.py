@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from sqlmodel import Session, select
 from typing import Annotated, List
 from app.database import get_session
-from app.models.job import Job
+from app.models.models import Job
 
 router = APIRouter()
 

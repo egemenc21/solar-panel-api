@@ -4,7 +4,7 @@ from app.services.auth import User, get_current_active_user
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 from app.database import get_session
-from app.models.user import User
+from app.models.models import User
 
 router = APIRouter()
 

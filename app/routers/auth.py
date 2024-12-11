@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlmodel import Session, select
 from app.database import get_session
-from app.models.user import User
+from app.models.models import User
 from app.services.auth import ACCESS_TOKEN_EXPIRE_MINUTES, Token, UserCreate, UserInDB, authenticate_user, create_access_token, get_user, hash_password
 
 # fake_users_db = {

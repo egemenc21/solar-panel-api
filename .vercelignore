@@ -1,7 +1,0 @@
-venv/
-*.git
-*.gitignore
-*.md
-*.env
-database.db
-tests/

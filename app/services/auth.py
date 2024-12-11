@@ -7,7 +7,7 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlmodel import Session, select
 from app.database import get_session
-from app.models.user import User as UserModel
+from app.models.models import User as UserModel
 from sqlalchemy.exc import NoResultFound
 
 
