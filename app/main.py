@@ -114,11 +114,13 @@ async def predict(
         font = ImageFont.load_default()
         font.size = 20
 
+        predicted_classes = set()  # Use a set to avoid duplicate classes
         # Annotate the image with predictions
         for prediction in predictions.get("predictions", []):
             x, y = prediction["x"], prediction["y"]
             width, height = prediction["width"], prediction["height"]
             label = prediction["class"]
+            predicted_classes.add(label.lower())  # Add the label to the set (e.g., 'clean', 'dusty')
 
             # Draw a rectangle around the object with smaller line width
             top_left = (x - width // 2, y - height // 2)
@@ -136,22 +138,23 @@ async def predict(
         classified_image_path = save_classified_image(
             pil_image, user_id, filename)
 
-        # Ensure the field exists in the database
+          # Ensure the field exists in the database
         field = session.get(SolarField, field_id)
         if not field:
             raise HTTPException(
                 status_code=404, detail=f"SolarField with ID {field_id} not found"
             )
 
-        # Create a new PanelImage instance for each prediction
-        for prediction in predictions.get("predictions", []):
-            image_class = prediction["class"].lower()  # e.g., 'clean', 'dusty'
-            panel_image = PanelImage(
-                path=classified_image_path,
-                field_id=field_id,
-                image_class=image_class,
-            )
-            session.add(panel_image)
+        # Concatenate predicted classes into a single string
+        image_class = ",".join(predicted_classes)
+
+        # Create a single PanelImage instance
+        panel_image = PanelImage(
+            path=classified_image_path,
+            field_id=field_id,
+            image_class=image_class,
+        )
+        session.add(panel_image)
 
         # Commit the changes
         session.commit()
