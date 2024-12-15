@@ -28,32 +28,10 @@ rf = Roboflow(api_key=API_KEY)
 project = rf.workspace().project(MODEL_ENDPOINT)
 model = project.version(VERSION).model
 
-
-
 # Table = true tablo oluşturulmasını sağlar
 # Field(primary_key=True) tells SQLModel that the id is the primary key in the SQL database
 # Field(index=True) tells SQLModel to create an index for the name and age columns, that would allow
 # faster lookups in the database when reading data filtered by this column.
-class HeroBase(SQLModel):
-    name: str = Field(index=True)
-    age: Union[int, None] = Field(default=None, index=True)
-
-
-class Hero(HeroBase, table=True):
-    id: Union[int, None] = Field(default=None, primary_key=True)
-    secret_name: str
-
-
-class HeroPublic(HeroBase):
-    id: int
-
-class HeroCreate(HeroBase):
-    secret_name: str
-
-class HeroUpdate(HeroBase):
-    name: Union[str, None] = None
-    age: Union[int, None] = None
-    secret_name: Union[str, None] = None
 
 
 def create_db_and_tables():
@@ -85,7 +63,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-     allow_origins=["*"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -95,18 +73,28 @@ app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 app.include_router(fields.router, prefix="/fields", tags=["fields"])
-app.include_router(panel_images.router, prefix="/panel_images", tags=["panel_images"])
-app.mount("/classified_images", StaticFiles(directory="classified_images"), name="classified_images")
+app.include_router(panel_images.router,
+                   prefix="/panel_images", tags=["panel_images"])
+app.mount("/classified_images",
+          StaticFiles(directory="classified_images"), name="classified_images")
+
 
 @app.post("/predict")
-async def predict(current_user: Annotated[User, Depends(get_current_active_user)], image: UploadFile = File(...), user_id: int = 0):
+async def predict(
+    current_user: Annotated[User, Depends(get_current_active_user)], 
+    session: SessionDep, 
+    image: UploadFile = File(...), 
+    user_id: int = 0, 
+    field_id: int = 0
+    ):
     """
     Accepts an image file, sends it to Roboflow for prediction, annotates the image, and saves it.
     """
     try:
         # Validate the file type
         if not image.content_type.startswith("image/"):
-            raise HTTPException(status_code=400, detail="Uploaded file is not an image.")
+            raise HTTPException(
+                status_code=400, detail="Uploaded file is not an image.")
 
         # Save the uploaded image temporarily
         temp_image_path = f"temp_{image.filename}"
@@ -114,7 +102,8 @@ async def predict(current_user: Annotated[User, Depends(get_current_active_user)
             buffer.write(await image.read())
 
         # Perform inference using Roboflow SDK
-        predictions = model.predict(temp_image_path, confidence=7, overlap=50).json()
+        predictions = model.predict(
+            temp_image_path, confidence=7, overlap=50).json()
 
         # Open the image using PIL for annotation
         pil_image = Image.open(temp_image_path)
@@ -122,7 +111,7 @@ async def predict(current_user: Annotated[User, Depends(get_current_active_user)
 
         # Define font for labels
         # Use default font
-        font = ImageFont.load_default() 
+        font = ImageFont.load_default()
         font.size = 20
 
         # Annotate the image with predictions
@@ -138,12 +127,34 @@ async def predict(current_user: Annotated[User, Depends(get_current_active_user)
 
             padding = 15  # Adjust padding value as needed
             # Adjust text position and size
-            text_position = (top_left[0], top_left[1] - padding)  # Place text slightly above the box
+            # Place text slightly above the box
+            text_position = (top_left[0], top_left[1] - padding)
             draw.text(text_position, label, fill="red", font=font)
 
         # Save the annotated image
         filename = f"classified_{image.filename}"
-        classified_image_path = save_classified_image(pil_image, user_id, filename)
+        classified_image_path = save_classified_image(
+            pil_image, user_id, filename)
+
+        # Ensure the field exists in the database
+        field = session.get(SolarField, field_id)
+        if not field:
+            raise HTTPException(
+                status_code=404, detail=f"SolarField with ID {field_id} not found"
+            )
+
+        # Create a new PanelImage instance for each prediction
+        for prediction in predictions.get("predictions", []):
+            image_class = prediction["class"].lower()  # e.g., 'clean', 'dusty'
+            panel_image = PanelImage(
+                path=classified_image_path,
+                field_id=field_id,
+                image_class=image_class,
+            )
+            session.add(panel_image)
+
+        # Commit the changes
+        session.commit()
 
         # Clean up temporary image
         os.remove(temp_image_path)
@@ -170,62 +181,6 @@ def save_classified_image(image: Image, user_id: int, filename: str) -> str:
     image_path = os.path.join(user_dir, filename)
     image.save(image_path, "JPEG", quality=85)  # Compress image
     return image_path
-
-
-# Get heroes
-@app.get("/heroes/", response_model=list[HeroPublic])
-def read_heroes(
-    session: SessionDep, # Dependency injection
-    offset: int = 0, # the number of records to skip before starting to return results
-    limit: Annotated[int, Query(le=100)] = 100,
-) -> list[Hero]:
-    heroes = session.exec(select(Hero)
-                          .offset(offset)
-                          .limit(limit)).all()
-    return heroes
-
-# Get a hero by ID
-@app.get("/heroes/{hero_id}")
-def read_hero(hero_id: int, session: SessionDep) -> Hero:
-    hero = session.get(Hero, hero_id)
-    if not hero:
-        raise HTTPException(status_code=404, detail="Hero not found")
-    return hero
-
-# Create a hero
-@app.post("/heroes/", response_model=HeroPublic)
-def create_hero(hero: HeroCreate, session: SessionDep):
-    db_hero = Hero.model_validate(hero)
-    session.add(db_hero) # to add the new hero instance to the database session
-    session.commit() # to add the new hero instance to the database session
-    session.refresh(db_hero) # to refresh the instance with the data from the database
-    return db_hero
-
-# Update a hero
-@app.patch("/heroes/{hero_id}", response_model=HeroPublic)
-def update_hero(hero_id: int, hero: HeroUpdate, session: SessionDep):
-    hero_db = session.get(Hero, hero_id)
-    if not hero_db:
-        raise HTTPException(status_code=404, detail="Hero not found")
-    hero_data = hero.model_dump(exclude_unset=True)
-    # excluding any values that would be there just for being the default values. 
-    # To do it we use exclude_unset=True. This is the main trick. 🪄
-    hero_db.sqlmodel_update(hero_data)
-
-    session.add(hero_db)
-    session.commit()
-    session.refresh(hero_db)
-    return hero_db
-
-# Delete a hero
-@app.delete("/heroes/{hero_id}")
-def delete_hero(hero_id: int, session: SessionDep):
-    hero = session.get(Hero, hero_id)
-    if not hero:
-        raise HTTPException(status_code=404, detail="Hero not found")
-    session.delete(hero)
-    session.commit()
-    return {"ok": True}
 
 
 @app.get("/")

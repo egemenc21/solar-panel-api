@@ -32,6 +32,7 @@ class PanelImage(BaseModel, table=True):
     
     # Relationships
     field: Optional[SolarField] = Relationship(back_populates="images")
+    image_class: str # 'clean', 'dirty', 'damaged'
 
 class Job(BaseModel, table=True):
     description: str
