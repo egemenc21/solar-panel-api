@@ -8,16 +8,6 @@ from app.database import get_session
 from app.models.models import User
 from app.services.auth import ACCESS_TOKEN_EXPIRE_MINUTES, Token, UserCreate, UserInDB, authenticate_user, create_access_token, get_user, hash_password
 
-# fake_users_db = {
-#     "johndoe": {
-#         "username": "johndoe",
-#         "full_name": "John Doe",
-#         "email": "johndoe@example.com",
-#         "hashed_password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
-#         "disabled": False,
-#     }
-# }
-
 
 class LoginRequest(BaseModel):
     username: str
