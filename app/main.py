@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import gc
 import logging
 from dotenv import load_dotenv
 import os
@@ -6,6 +7,7 @@ from typing import Annotated, Dict, List, Set, Union, Optional
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, requests
 from fastapi.responses import JSONResponse
 from sqlmodel import Field, Session, SQLModel, select
+import torch
 from app.routers import auth, users, jobs, fields, panel_images
 from fastapi.middleware.cors import CORSMiddleware
 from app.services.auth import oauth2_scheme, get_current_active_user
@@ -36,6 +38,13 @@ MODEL_PATH = "app/bestx.pt"
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
 
+async def load_model():
+    global model
+    model = YOLO("app/bestx.pt")
+    # Force model to CPU if you're not using GPU
+    model.cpu()
+    # Set model to evaluation mode
+    model.eval()
 
 def get_session():
     with Session(engine) as session:
@@ -49,6 +58,7 @@ SessionDep = Annotated[Session, Depends(get_session)]
 async def lifespan(app: FastAPI):
     # Uygulama başlatıldığında çalışacak kod
     create_db_and_tables()
+    await load_model()
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -90,7 +100,8 @@ def save_classified_image(image: Image.Image, user_id: int, filename: str) -> st
     
     # Full path for the image
     full_path = os.path.join(directory, filename)
-    image.save(full_path)
+    image = image.convert('RGB')
+    image.save(full_path, optimize=True, quality=85)
     return full_path
 
 @app.post("/predict")
@@ -101,116 +112,74 @@ async def predict(
     user_id: int = 0,
     field_id: int = 0
 ):
-    """
-    Accepts an image file, uses YOLO for prediction, annotates the image, and saves it.
-    """
     try:
-        # Validate the file type
         if not image.content_type.startswith("image/"):
-            raise HTTPException(
-                status_code=400, 
-                detail="Uploaded file is not an image."
-            )
+            raise HTTPException(status_code=400, detail="Uploaded file is not an image.")
 
-        # Save the uploaded image temporarily
-        temp_image_path = f"temp_{image.filename}"
+        # Read image directly into memory without saving temp file
         image_bytes = await image.read()
-        with open(temp_image_path, "wb") as buffer:
-            buffer.write(image_bytes)
-
-        # Read image for YOLO processing
-        cv2_image = cv2.imread(temp_image_path)
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        cv2_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        # Perform YOLO inference
-        results = model.predict(cv2_image, conf=0.7, iou=0.5)[0]
+        # Resize image if too large (adjust dimensions as needed)
+        max_size = 800
+        height, width = cv2_image.shape[:2]
+        if height > max_size or width > max_size:
+            scale = max_size / max(height, width)
+            cv2_image = cv2.resize(cv2_image, None, fx=scale, fy=scale)
         
-        # Convert CV2 image to PIL for drawing
-        pil_image = Image.open(temp_image_path)
+        # Perform YOLO inference with memory optimization
+        with torch.no_grad():  # Disable gradient calculation
+            results = model.predict(cv2_image, conf=0.7, iou=0.5)[0]
+        
+        # Convert CV2 image to PIL
+        cv2_rgb = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(cv2_rgb)
         draw = ImageDraw.Draw(pil_image)
         
-        # Use a larger font size for better visibility
-        try:
-            # Try to load a larger font (if available on the system)
-            font = ImageFont.truetype("DejaVuSans.ttf", 32)
-        except:
-            # Fallback to default font
-            font = ImageFont.load_default()
+        # Use default font to avoid loading external fonts
+        font = ImageFont.load_default()
         
-        # Define colors
-        BOX_COLOR = "green"  # Changed from red to green
-        TEXT_COLOR = "green"  # Changed from red to green
-        
-        predicted_classes: Set[str] = set()
+        BOX_COLOR = "green"
+        predicted_classes = set()
         predictions_list = []
         
-        # Process each detection
+        # Process detections
         for box in results.boxes:
-            # Get box coordinates
-            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+            coords = box.xyxy[0].cpu().numpy()
             confidence = float(box.conf[0].cpu().numpy())
             class_id = int(box.cls[0].cpu().numpy())
             label = results.names[class_id]
             
-            # Add to predicted classes set
             predicted_classes.add(label.lower())
             
-            # Draw thicker bounding box
-            draw.rectangle(
-                [(x1, y1), (x2, y2)],
-                outline=BOX_COLOR,
-                width=2  # Increased width from 1 to 3
-            )
+            # Draw box and label
+            draw.rectangle([(coords[0], coords[1]), (coords[2], coords[3])],
+                         outline=BOX_COLOR, width=2)
             
-            # Create more visible label
             label_text = f"{label} {confidence:.2f}"
-            padding = 5 # Increased padding for better spacing
+            draw.text((coords[0], coords[1] - 10), label_text,
+                     fill="white", font=font)
             
-            # Calculate text size for background rectangle
-            try:
-                text_width, text_height = font.getsize(label_text)
-            except AttributeError:
-                # Fallback for newer Pillow versions
-                text_width = len(label_text) * 8 # Approximate width
-                text_height = 16  # Default height
-            
-            # Draw background rectangle for text
-            draw.rectangle(
-                [(x1, y1 - padding - text_height), (x1 + text_width, y1 - padding)],
-                fill=BOX_COLOR,
-            )
-            
-            # Draw white text on green background for better contrast
-            draw.text(
-                (x1, y1 - padding - text_height),
-                label_text,
-                fill="white",
-                font=font
-            )
-            
-            # Add to predictions list for JSON response
             predictions_list.append({
-                "x": float((x1 + x2) / 2),
-                "y": float((y1 + y2) / 2),
-                "width": float(x2 - x1),
-                "height": float(y2 - y1),
+                "x": float((coords[0] + coords[2]) / 2),
+                "y": float((coords[1] + coords[3]) / 2),
+                "width": float(coords[2] - coords[0]),
+                "height": float(coords[3] - coords[1]),
                 "confidence": confidence,
                 "class": label
             })
-
-        # Save the annotated image
+        
+        # Save image and create database entry
         filename = f"classified_{image.filename}"
-        classified_image_path = save_classified_image(
-            pil_image, user_id, filename
-        )
-
+        classified_image_path = save_classified_image(pil_image, user_id, filename)
+        
         # Verify field exists
         field = session.get(SolarField, field_id)
         if not field:
-            raise HTTPException(
-                status_code=404,
-                detail=f"SolarField with ID {field_id} not found"
-            )
-
+            raise HTTPException(status_code=404,
+                              detail=f"SolarField with ID {field_id} not found")
+        
         # Create database entry
         image_class = ",".join(predicted_classes)
         panel_image = PanelImage(
@@ -220,18 +189,19 @@ async def predict(
         )
         session.add(panel_image)
         session.commit()
-
-        # Clean up
-        os.remove(temp_image_path)
-
-        # Return predictions and path
+        
+        # Clear memory
+        del results
+        gc.collect()
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+        
         return JSONResponse(content={
             "predictions": {
                 "predictions": predictions_list
             },
             "classified_image_path": classified_image_path
         })
-
+        
     except Exception as e:
         logging.error(f"Error processing image: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
