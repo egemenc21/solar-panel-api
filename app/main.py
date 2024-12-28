@@ -87,10 +87,6 @@ app.include_router(panel_images.router,
 app.mount("/classified_images",
           StaticFiles(directory="classified_images"), name="classified_images")
 
-model = YOLO("app/bestx.pt")
-
-
-
 def save_classified_image(image: Image.Image, user_id: int, filename: str) -> str:
     """Save the classified image to a directory structure."""
     # Create directory based on date to organize images
