@@ -138,4 +138,5 @@ venv.bak/
 .mypy_cache/
 
 # Mac OS
-.DS_Store
+.DS_Storeapp/optimized_model.onnx
+app/bestx.onnx
