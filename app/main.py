@@ -26,7 +26,7 @@ load_dotenv()
 API_KEY = os.getenv("API_KEY")
 MODEL_ENDPOINT = os.getenv("MODEL_ENDPOINT")
 VERSION = os.getenv("VERSION")
-MODEL_PATH = "app/bestx.pt"
+MODEL_PATH = "app/bestn.pt"
 
 
 # Table = true tablo oluşturulmasını sağlar
@@ -40,7 +40,7 @@ def create_db_and_tables():
 
 async def load_model():
     global model
-    model = YOLO("app/bestx.pt")
+    model = YOLO("app/bestn.pt")
     # Force model to CPU if you're not using GPU
     model.cpu()
     # Set model to evaluation mode
